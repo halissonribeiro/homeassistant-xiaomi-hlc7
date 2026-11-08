@@ -41,8 +41,9 @@ from xiaomi_p2p import (  # noqa: E402
     pcm16_to_alaw,
 )
 
-SESSION_FILE = "/config/.xiaomi_hlc7_session.json"
-OUT_DIR = "/config/www"
+_BASE = "/config" if os.path.isdir("/config") else os.path.expanduser("~")
+SESSION_FILE = os.path.join(_BASE, ".xiaomi_hlc7_session.json")
+OUT_DIR = os.path.join(_BASE, "www") if _BASE == "/config" else _BASE
 
 
 def login(cloud: XiaomiCloud) -> None:
@@ -134,6 +135,7 @@ def main() -> None:
     ap.add_argument("--region", default="cn")
     ap.add_argument("--seconds", type=float, default=10)
     ap.add_argument("--model", default="isa.camera.hlc7")
+    ap.add_argument("--did", help="did da câmera (se tiver mais de uma)")
     ap.add_argument("--beep", action="store_true")
     args = ap.parse_args()
 
@@ -143,12 +145,19 @@ def main() -> None:
     cams = [d for d in cloud.devices(args.region) if ".camera." in d.get("model", "")]
     for d in cams:
         print(f"     - {d.get('name')}  model={d.get('model')}  did={d.get('did')}  ip={d.get('localip')}")
-    cam = next((d for d in cams if d.get("model") == args.model), None)
+    cam = next(
+        (
+            d
+            for d in cams
+            if (str(d.get("did")) == args.did if args.did else d.get("model") == args.model)
+        ),
+        None,
+    )
     if not cam:
         sys.exit(f"[erro] Nenhuma câmera {args.model} na região {args.region}")
     token = cam.get("token", "")
     print(f"[ok] Câmera: {cam['name']} did={cam['did']} ip={cam['localip']}")
-    print(f"[ok] Token miIO: {token}  (guarde; serve para os controles)")
+    print(f"[ok] Token miIO: {token[:4]}...{token[-4:]}  (o componente busca sozinho)")
 
     pub, priv = generate_keypair()
     t0 = time.monotonic()

@@ -212,6 +212,7 @@ class Cs2Conn:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("", 0))
         self.err: Exception | None = None
+        self.trace: list[str] = []
         self._closed = False
         self._seq0 = 0
         self._seq3 = 0
@@ -231,7 +232,8 @@ class Cs2Conn:
         while True:
             now = time.monotonic()
             if now > deadline:
-                raise P2PError(f"CS2 handshake timeout with {self.host}")
+                seen = "; ".join(self.trace[-4:]) or "nothing received"
+                raise P2PError(f"CS2 handshake timeout with {self.host} ({seen})")
             if now >= next_send:
                 self.sock.sendto(req, self.addr)
                 next_send = now + 1.0
@@ -242,6 +244,7 @@ class Cs2Conn:
                 continue
             if addr[0] != self.host or len(res) < 16:
                 continue
+            self.trace.append(f"<- {res[1]:#04x} from port {addr[1]}")
             if ok(res):
                 self.addr = (self.host, addr[1])
                 return res
