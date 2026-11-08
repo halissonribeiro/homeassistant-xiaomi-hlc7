@@ -1,0 +1,112 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Câmera Xiaomi 2K (local)",
+        "description": "Controle local da Xiaomi Mi Camera 2K Magnetic Mount (isa.camera.hlc7).\n\nPré-requisitos:\n- O token miIO da câmera (32 caracteres, obtido com o Xiaomi Cloud Tokens Extractor, servidor `cn`)\n- O add-on go2rtc com a câmera já adicionada pela fonte Xiaomi",
+        "data": {
+          "name": "Nome",
+          "host": "IP da câmera",
+          "token": "Token miIO",
+          "go2rtc_url": "URL da API do go2rtc",
+          "stream": "Nome do stream no go2rtc"
+        }
+      }
+    },
+    "error": {
+      "invalid_token": "Token inválido (precisa ter 32 caracteres hexadecimais e ser o da câmera).",
+      "cannot_connect": "A câmera não respondeu na porta UDP 54321.",
+      "go2rtc_unreachable": "Não consegui acessar a API do go2rtc nessa URL.",
+      "stream_not_found": "Esse stream não existe no go2rtc (confira o nome exato)."
+    },
+    "abort": {
+      "already_configured": "Esta câmera já está configurada."
+    }
+  },
+  "entity": {
+    "switch": {
+      "camera_power": {
+        "name": "Câmera ligada"
+      },
+      "motion_detection": {
+        "name": "Detecção de movimento"
+      },
+      "indicator_light": {
+        "name": "Luz indicadora"
+      },
+      "time_watermark": {
+        "name": "Marca d'água de horário"
+      }
+    },
+    "select": {
+      "night_vision": {
+        "name": "Visão noturna",
+        "state": {
+          "off": "Desligada",
+          "on": "Ligada",
+          "auto": "Automática"
+        }
+      },
+      "recording_mode": {
+        "name": "Modo de gravação",
+        "state": {
+          "continuous": "Contínua",
+          "motion": "Só com movimento",
+          "stop": "Parada"
+        }
+      },
+      "image_rotation": {
+        "name": "Rotação da imagem",
+        "state": {
+          "0": "Normal",
+          "180": "Invertida (180°)"
+        }
+      },
+      "motion_sensitivity": {
+        "name": "Sensibilidade de movimento",
+        "state": {
+          "low": "Baixa",
+          "medium": "Média",
+          "high": "Alta"
+        }
+      }
+    },
+    "number": {
+      "alarm_interval": {
+        "name": "Intervalo entre alertas"
+      }
+    },
+    "sensor": {
+      "sd_status": {
+        "name": "Cartão SD",
+        "state": {
+          "normal": "Normal",
+          "not_inserted": "Sem cartão",
+          "insufficient_space": "Sem espaço",
+          "error": "Erro",
+          "formatting": "Formatando",
+          "ejected": "Ejetado"
+        }
+      },
+      "sd_total": {
+        "name": "Cartão SD total"
+      },
+      "sd_free": {
+        "name": "Cartão SD livre"
+      },
+      "sd_used": {
+        "name": "Cartão SD usado"
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Reiniciar"
+      }
+    },
+    "media_player": {
+      "speaker": {
+        "name": "Alto-falante"
+      }
+    }
+  }
+}

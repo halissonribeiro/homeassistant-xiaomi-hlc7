@@ -1,0 +1,112 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Xiaomi Camera 2K (local)",
+        "description": "Local control of the Xiaomi Mi Camera 2K Magnetic Mount (isa.camera.hlc7).\n\nPrerequisites:\n- The camera's miIO token (32 hex chars, from Xiaomi Cloud Tokens Extractor, server `cn`)\n- The go2rtc add-on with the camera already added through its Xiaomi source",
+        "data": {
+          "name": "Name",
+          "host": "Camera IP",
+          "token": "miIO token",
+          "go2rtc_url": "go2rtc API URL",
+          "stream": "go2rtc stream name"
+        }
+      }
+    },
+    "error": {
+      "invalid_token": "Invalid token (must be 32 hex characters and belong to this camera).",
+      "cannot_connect": "The camera did not answer on UDP port 54321.",
+      "go2rtc_unreachable": "Could not reach the go2rtc API at this URL.",
+      "stream_not_found": "This stream does not exist in go2rtc (check the exact name)."
+    },
+    "abort": {
+      "already_configured": "This camera is already configured."
+    }
+  },
+  "entity": {
+    "switch": {
+      "camera_power": {
+        "name": "Camera power"
+      },
+      "motion_detection": {
+        "name": "Motion detection"
+      },
+      "indicator_light": {
+        "name": "Indicator light"
+      },
+      "time_watermark": {
+        "name": "Time watermark"
+      }
+    },
+    "select": {
+      "night_vision": {
+        "name": "Night vision",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "auto": "Auto"
+        }
+      },
+      "recording_mode": {
+        "name": "Recording mode",
+        "state": {
+          "continuous": "Continuous",
+          "motion": "Motion only",
+          "stop": "Stopped"
+        }
+      },
+      "image_rotation": {
+        "name": "Image rotation",
+        "state": {
+          "0": "Normal",
+          "180": "Flipped (180°)"
+        }
+      },
+      "motion_sensitivity": {
+        "name": "Motion sensitivity",
+        "state": {
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        }
+      }
+    },
+    "number": {
+      "alarm_interval": {
+        "name": "Alert interval"
+      }
+    },
+    "sensor": {
+      "sd_status": {
+        "name": "SD card",
+        "state": {
+          "normal": "Normal",
+          "not_inserted": "Not inserted",
+          "insufficient_space": "Full",
+          "error": "Error",
+          "formatting": "Formatting",
+          "ejected": "Ejected"
+        }
+      },
+      "sd_total": {
+        "name": "SD card total"
+      },
+      "sd_free": {
+        "name": "SD card free"
+      },
+      "sd_used": {
+        "name": "SD card used"
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Restart"
+      }
+    },
+    "media_player": {
+      "speaker": {
+        "name": "Speaker"
+      }
+    }
+  }
+}
