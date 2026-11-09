@@ -134,9 +134,17 @@
       "init": {
         "title": "Options",
         "data": {
-          "quality": "Video quality"
-        }
+          "quality": "Video quality",
+          "lan_rtsp": "Expose RTSP on the LAN (Frigate)",
+          "lan_rtsp_port": "RTSP port",
+          "lan_rtsp_username": "RTSP username",
+          "lan_rtsp_password": "RTSP password (min. 8 characters)"
+        },
+        "description": "Optional: expose the cameras over RTSP on the LAN for NVRs (Frigate, etc.) at `rtsp://user:password@HA_IP:PORT/CAMERA_NAME`. The exact address is in the camera entity's `rtsp_lan_url` attribute."
       }
+    },
+    "error": {
+      "weak_password": "Use a password with at least 8 characters."
     }
   },
   "selector": {

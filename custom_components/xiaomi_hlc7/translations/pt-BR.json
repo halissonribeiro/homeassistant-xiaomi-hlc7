@@ -134,9 +134,17 @@
       "init": {
         "title": "Opções",
         "data": {
-          "quality": "Qualidade do vídeo"
-        }
+          "quality": "Qualidade do vídeo",
+          "lan_rtsp": "Expor RTSP na rede local (Frigate)",
+          "lan_rtsp_port": "Porta RTSP",
+          "lan_rtsp_username": "Usuário RTSP",
+          "lan_rtsp_password": "Senha RTSP (mín. 8 caracteres)"
+        },
+        "description": "Opcional: expõe as câmeras em RTSP na rede local para NVRs (Frigate, etc.), em `rtsp://usuário:senha@IP_DO_HA:PORTA/NOME_DA_CAMERA`. O endereço exato aparece no atributo `rtsp_lan_url` da entidade câmera."
       }
+    },
+    "error": {
+      "weak_password": "Use uma senha com pelo menos 8 caracteres."
     }
   },
   "selector": {

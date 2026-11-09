@@ -16,6 +16,12 @@ CONF_PASS_TOKEN = "pass_token"
 CONF_REGION = "region"
 CONF_CAMERAS = "cameras"
 CONF_QUALITY = "quality"
+CONF_LAN_RTSP = "lan_rtsp"
+CONF_LAN_PORT = "lan_rtsp_port"
+CONF_LAN_USER = "lan_rtsp_username"
+CONF_LAN_PASSWORD = "lan_rtsp_password"
+DEFAULT_LAN_PORT = 8556
+DEFAULT_LAN_USER = "frigate"
 
 REGIONS = ["cn", "de", "i2", "ru", "sg", "us"]
 DEFAULT_REGION = "cn"

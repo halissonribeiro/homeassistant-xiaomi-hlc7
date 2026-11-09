@@ -60,6 +60,36 @@ data:
 
 O volume do media player é um ganho de software (0,5 = original, 1,0 = 2x).
 
+## Frigate / outros NVRs (opcional)
+
+Em *Configurar* da integração, ligue **Expor RTSP na rede local**, escolha
+porta (padrão 8556, para não colidir com o go2rtc do Frigate em 8554/8555),
+usuário e senha. Cada câmera fica em
+`rtsp://usuário:senha@<IP do HA>:8556/<nome_da_câmera>` (o endereço exato
+aparece no atributo `rtsp_lan_url` da entidade câmera). Só TCP, sem
+recodificar (H.265 + PCMA).
+
+```yaml
+# Frigate
+go2rtc:
+  streams:
+    lavanderia:
+      - rtsp://frigate:SENHA@192.168.80.200:8556/camara_mi_2k_lavanderia
+cameras:
+  lavanderia:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/lavanderia
+          input_args: preset-rtsp-restream
+          roles: [record, detect]
+      output_args:
+        record: preset-record-generic-audio-aac
+    detect:
+      width: 1280
+      height: 720
+      fps: 5
+```
+
 ## Latência
 
 O vídeo é H.265 sem recodificação. Safari toca direto via WebRTC. Chrome e o

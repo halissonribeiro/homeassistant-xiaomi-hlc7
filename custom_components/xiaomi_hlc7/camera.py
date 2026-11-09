@@ -40,6 +40,7 @@ class Hlc7Camera(Hlc7Entity, Camera):
             "p2p_protocol": s.protocol,
             "p2p_remote": s.remote,
             "p2p_last_error": s.last_error,
+            "rtsp_lan_url": self.coordinator.lan_url,
         }
 
     async def stream_source(self) -> str | None:
