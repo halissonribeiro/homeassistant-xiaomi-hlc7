@@ -127,6 +127,13 @@ async def _start_lan_rtsp(hass: HomeAssistant, entry: Hlc7ConfigEntry, data: Hlc
         for path, streamer in routes.items():
             if streamer is coordinator.streamer:
                 coordinator.lan_url = f"rtsp://{data.lan_host}:{port}{path}"
+        # Warm up: learn the codec parameters now so the NVR's first
+        # DESCRIBE is answered immediately.
+        entry.async_create_background_task(
+            hass,
+            hass.async_add_executor_job(coordinator.streamer.wait_ready, 30),
+            f"xiaomi_hlc7 warm-up {coordinator.info.did}",
+        )
 
 
 async def _reload_on_options(hass: HomeAssistant, entry: Hlc7ConfigEntry) -> None:

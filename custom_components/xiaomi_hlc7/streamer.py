@@ -107,9 +107,24 @@ class CameraStreamer:
                 self._idle_since = time.monotonic()
 
     def wait_ready(self, timeout: float) -> bool:
-        """Block until codec parameters are known (first keyframe)."""
+        """Block until codec parameters are known (first keyframe).
+
+        Parameters learned in an earlier session are reused, so a new RTSP
+        client gets its SDP at once instead of waiting for the P2P session
+        (cloud signature + handshake + keyframe), which can exceed the
+        5-10 s read timeout of some clients (go2rtc in Frigate).
+        """
         self._ensure_thread()
+        if self._params_complete():
+            return True
         return self._ready.wait(timeout)
+
+    def _params_complete(self) -> bool:
+        if self.video_codec == CODEC_H265:
+            return all(k in self.params for k in ("vps", "sps", "pps"))
+        if self.video_codec == CODEC_H264:
+            return all(k in self.params for k in ("sps", "pps"))
+        return False
 
     @property
     def running(self) -> bool:
