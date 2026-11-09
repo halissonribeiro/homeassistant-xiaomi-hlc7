@@ -8,21 +8,21 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import P_SD_FREE, P_SD_STATUS, P_SD_TOTAL, P_SD_USED, SD_STATUS_OPTIONS
-from .entity import Hlc7Entity
+from .entity import Hlc7Entity, cameras
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    c = entry.runtime_data
-    async_add_entities(
-        [
+    entities: list[SensorEntity] = []
+    for c in cameras(entry):
+        entities += [
             Hlc7SdStatus(c),
             Hlc7SdSpace(c, "sd_total", P_SD_TOTAL),
             Hlc7SdSpace(c, "sd_free", P_SD_FREE),
             Hlc7SdSpace(c, "sd_used", P_SD_USED),
         ]
-    )
+    async_add_entities(entities)
 
 
 class Hlc7SdStatus(Hlc7Entity, SensorEntity):

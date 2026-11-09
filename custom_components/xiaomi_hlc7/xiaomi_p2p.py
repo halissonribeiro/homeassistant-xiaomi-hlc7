@@ -204,13 +204,14 @@ class MediaPacket:
 
 # ------------------------------------------------------------------ CS2
 class Cs2Conn:
-    """CS2 P2P transport over UDP (the hlc7 answers on UDP)."""
+    """CS2 P2P transport. Starts on UDP; the camera may switch it to TCP."""
 
     def __init__(self, host: str, timeout: float = 5.0) -> None:
         self.host = host
         self.addr = (host, CS2_PORT)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("", 0))
+        self.tcp: socket.socket | None = None
         self.err: Exception | None = None
         self.trace: list[str] = []
         self._closed = False
@@ -258,17 +259,48 @@ class Cs2Conn:
             res, lambda r: r[1] in (MSG_RDY_UDP, MSG_RDY_TCP), deadline
         )
         if res[1] == MSG_RDY_TCP:
-            raise P2PError("camera asked for CS2 over TCP (not implemented)")
+            self.sock.close()
+            self.tcp = socket.create_connection(self.addr, timeout=3)
+            self.tcp.settimeout(None)
+            return
         self.sock.settimeout(1.0)
 
+    @property
+    def protocol(self) -> str:
+        return "cs2+tcp" if self.tcp else "cs2+udp"
+
+    def _send(self, raw: bytes) -> None:
+        if self.tcp:
+            self.tcp.sendall(struct.pack(">H", len(raw)) + b"\x68" + bytes(5) + raw)
+        else:
+            self.sock.sendto(raw, self.addr)
+
+    def _recv_exact(self, n: int) -> bytes:
+        assert self.tcp is not None
+        buf = b""
+        while len(buf) < n:
+            chunk = self.tcp.recv(n - len(buf))
+            if not chunk:
+                raise P2PError("camera closed the TCP session")
+            buf += chunk
+        return buf
+
+    def _recv(self) -> bytes | None:
+        if self.tcp:
+            hdr = self._recv_exact(8)
+            return self._recv_exact(struct.unpack(">H", hdr[:2])[0])
+        try:
+            buf, addr = self.sock.recvfrom(1500)
+        except TimeoutError:
+            return None
+        return buf if addr[0] == self.host else None
+
     def _worker(self) -> None:
+        keepalive = 0.0
         try:
             while not self._closed:
-                try:
-                    buf, addr = self.sock.recvfrom(1500)
-                except TimeoutError:
-                    continue
-                if addr[0] != self.host or len(buf) < 4:
+                buf = self._recv()
+                if buf is None or len(buf) < 4:
                     continue
                 kind = buf[1]
                 if kind == MSG_DRW and len(buf) >= 8:
@@ -276,14 +308,20 @@ class Cs2Conn:
                     channel = self.channels.get(ch)
                     if channel is None:
                         continue
+                    if self.tcp:
+                        # TCP: no ACKs, but the app pings every second.
+                        if (now := time.monotonic()) > keepalive:
+                            self._send(bytes([MAGIC, MSG_PING, 0, 0]))
+                            keepalive = now + 1.0
+                        channel.push(buf[8:])
+                        continue
                     pushed = channel.push_seq((buf[6] << 8) | buf[7], buf[8:])
                     if pushed >= 0:
-                        self.sock.sendto(
-                            bytes([MAGIC, MSG_DRW_ACK, 0, 6, MAGIC_DRW, ch, 0, 1, buf[6], buf[7]]),
-                            self.addr,
+                        self._send(
+                            bytes([MAGIC, MSG_DRW_ACK, 0, 6, MAGIC_DRW, ch, 0, 1, buf[6], buf[7]])
                         )
                 elif kind == MSG_PING:
-                    self.sock.sendto(bytes([MAGIC, MSG_PONG, 0, 0]), self.addr)
+                    self._send(bytes([MAGIC, MSG_PONG, 0, 0]))
                 elif kind == MSG_DRW_ACK:
                     self._ack.set()
                 elif kind == MSG_CLOSE:
@@ -317,9 +355,12 @@ class Cs2Conn:
                 + payload
             )
             self._seq0 = (self._seq0 + 1) & 0xFFFF
+            if self.tcp:
+                self._send(req)
+                return
             for _ in range(5):
                 self._ack.clear()
-                self.sock.sendto(req, self.addr)
+                self._send(req)
                 if self._ack.wait(1.0):
                     return
             raise P2PError(f"camera did not ack command {cmd:#x}")
@@ -345,15 +386,24 @@ class Cs2Conn:
             + payload
         )
         self._seq3 = (self._seq3 + 1) & 0xFFFF
-        self.sock.sendto(req, self.addr)
+        self._send(req)
 
     def close(self) -> None:
+        if self._closed:
+            return
         self._closed = True
         try:
-            self.sock.sendto(bytes([MAGIC, MSG_CLOSE, 0, 0]), self.addr)
+            self._send(bytes([MAGIC, MSG_CLOSE, 0, 0]))
         except OSError:
             pass
-        self.sock.close()
+        if self.tcp:
+            try:
+                self.tcp.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            self.tcp.close()
+        else:
+            self.sock.close()
 
 
 # ------------------------------------------------------------------ MISS
@@ -391,6 +441,10 @@ class MissClient:
     @property
     def remote(self) -> str:
         return self.conn.remote
+
+    @property
+    def protocol(self) -> str:
+        return self.conn.protocol
 
     def command(self, data: bytes) -> None:
         self.conn.write_command(CMD_ENCODED, encode(data, self.key))

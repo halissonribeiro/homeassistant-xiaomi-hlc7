@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import P_CAMERA_ON, P_INDICATOR, P_MOTION, P_WATERMARK
-from .entity import Hlc7Entity
+from .entity import Hlc7Entity, cameras
 
 SWITCHES = [
     ("camera_power", P_CAMERA_ON, "mdi:cctv", None),
@@ -23,9 +23,9 @@ SWITCHES = [
 async def async_setup_entry(
     hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator = entry.runtime_data
     async_add_entities(
         Hlc7Switch(coordinator, key, prop, icon, category)
+        for coordinator in cameras(entry)
         for key, prop, icon, category in SWITCHES
     )
 

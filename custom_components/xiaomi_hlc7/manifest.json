@@ -1,13 +1,17 @@
 {
   "domain": "xiaomi_hlc7",
   "name": "Xiaomi Camera 2K Magnetic Mount (local)",
-  "codeowners": ["@halissonribeiro"],
+  "codeowners": [
+    "@halissonribeiro"
+  ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "ffmpeg"
+  ],
   "documentation": "https://github.com/halissonribeiro/homeassistant-xiaomi-hlc7",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/halissonribeiro/homeassistant-xiaomi-hlc7/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }
