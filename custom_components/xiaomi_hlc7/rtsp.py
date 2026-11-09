@@ -152,12 +152,32 @@ def _fragment(nal: bytes, h265: bool):
 
 
 class RtspServer:
-    """Serves rtsp://127.0.0.1:<port>/live for one CameraStreamer."""
+    """Serves one or more CameraStreamers, routed by URL path.
 
-    def __init__(self, streamer: CameraStreamer) -> None:
-        self.streamer = streamer
-        self.port: int | None = None
-        self.path = "/" + base64.urlsafe_b64encode(os.urandom(9)).decode()
+    Internal use (default): 127.0.0.1, random port, one random path.
+    LAN use (Frigate etc.): fixed host/port, readable paths, Basic auth.
+    """
+
+    def __init__(
+        self,
+        streamer: CameraStreamer | None = None,
+        *,
+        routes: dict[str, CameraStreamer] | None = None,
+        host: str = "127.0.0.1",
+        port: int = 0,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> None:
+        self.routes: dict[str, CameraStreamer] = dict(routes or {})
+        if streamer is not None:
+            self.path = "/" + base64.urlsafe_b64encode(os.urandom(9)).decode()
+            self.routes[self.path] = streamer
+        self.host = host
+        self.port: int | None = port or None
+        self._want_port = port
+        self._auth: str | None = None
+        if username and password:
+            self._auth = "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
         self._server: asyncio.base_events.Server | None = None
 
     @property
@@ -165,16 +185,25 @@ class RtspServer:
         return f"rtsp://127.0.0.1:{self.port}{self.path}"
 
     async def start(self) -> None:
-        self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        self._server = await asyncio.start_server(self._handle, self.host, self._want_port)
         self.port = self._server.sockets[0].getsockname()[1]
+
+    def _route(self, url: str) -> CameraStreamer | None:
+        path = "/" + url.split("://", 1)[-1].split("/", 1)[-1] if "://" in url else url
+        path = path.split("?", 1)[0]
+        for prefix, streamer in self.routes.items():
+            if path == prefix or path.startswith(prefix + "/"):
+                return streamer
+        return None
 
     async def stop(self) -> None:
         if self._server:
             self._server.close()
             await self._server.wait_closed()
 
-    def _sdp(self) -> str:
-        p = self.streamer.params
+    @staticmethod
+    def _sdp(streamer: CameraStreamer) -> str:
+        p = streamer.params
         b64 = lambda k: base64.b64encode(p[k]).decode()  # noqa: E731
         lines = [
             "v=0",
@@ -183,7 +212,7 @@ class RtspServer:
             "c=IN IP4 0.0.0.0",
             "t=0 0",
         ]
-        if self.streamer.video_codec == CODEC_H265:
+        if streamer.video_codec == CODEC_H265:
             lines += [
                 f"m=video 0 RTP/AVP {PT_VIDEO}",
                 f"a=rtpmap:{PT_VIDEO} H265/90000",
@@ -209,6 +238,7 @@ class RtspServer:
         loop = asyncio.get_running_loop()
         session = _Session(writer, loop)
         sender: asyncio.Task | None = None
+        streamer: CameraStreamer | None = None
         try:
             while True:
                 first = await reader.read(1)
@@ -233,20 +263,32 @@ class RtspServer:
                 body = ""
                 status = "200 OK"
 
-                if method != "OPTIONS" and self.path not in url:
+                target = self._route(url) if method != "OPTIONS" else None
+                if (
+                    self._auth
+                    and method not in ("OPTIONS",)
+                    and headers.get("authorization") != self._auth
+                ):
+                    status = "401 Unauthorized"
+                    resp_headers["WWW-Authenticate"] = 'Basic realm="xiaomi_hlc7"'
+                elif method != "OPTIONS" and target is None:
                     status = "404 Not Found"
+                elif streamer is not None and target is not None and target is not streamer:
+                    status = "400 Bad Request"
                 elif method == "OPTIONS":
                     resp_headers["Public"] = "OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN, GET_PARAMETER"
                 elif method == "DESCRIBE":
-                    ok = await loop.run_in_executor(None, self.streamer.wait_ready, READY_TIMEOUT_S)
+                    streamer = target
+                    ok = await loop.run_in_executor(None, streamer.wait_ready, READY_TIMEOUT_S)
                     if not ok:
                         status = "503 Service Unavailable"
-                        _LOGGER.warning("Camera stream not ready: %s", self.streamer.last_error)
+                        _LOGGER.warning("Camera stream not ready: %s", streamer.last_error)
                     else:
-                        body = self._sdp()
+                        body = self._sdp(streamer)
                         resp_headers["Content-Type"] = "application/sdp"
                         resp_headers["Content-Base"] = url.rstrip("/") + "/"
                 elif method == "SETUP":
+                    streamer = target
                     transport = headers.get("transport", "")
                     if "interleaved" not in transport and "TCP" not in transport.upper():
                         status = "461 Unsupported Transport"
@@ -258,8 +300,8 @@ class RtspServer:
                         resp_headers["Session"] = "1;timeout=60"
                 elif method == "PLAY":
                     resp_headers["Session"] = "1"
-                    if session.consumer_id is None:
-                        session.consumer_id = self.streamer.add_consumer(session.on_packet)
+                    if session.consumer_id is None and streamer is not None:
+                        session.consumer_id = streamer.add_consumer(session.on_packet)
                         sender = asyncio.create_task(self._send_loop(session))
                 elif method == "GET_PARAMETER":
                     resp_headers["Session"] = "1"
@@ -273,8 +315,8 @@ class RtspServer:
         except (asyncio.IncompleteReadError, ConnectionError, asyncio.LimitOverrunError):
             pass
         finally:
-            if session.consumer_id is not None:
-                self.streamer.remove_consumer(session.consumer_id)
+            if session.consumer_id is not None and streamer is not None:
+                streamer.remove_consumer(session.consumer_id)
             if sender:
                 sender.cancel()
             writer.close()

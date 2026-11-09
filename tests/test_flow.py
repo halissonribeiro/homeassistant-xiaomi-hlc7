@@ -47,3 +47,16 @@ async def test_flow_and_setup(hass):
             assert src.startswith("rtsp://127.0.0.1:")
             entry = hass.config_entries.async_entries(DOMAIN)[0]
             assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_options_lan_rtsp_requires_password(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="1", data={"user_id": "1", "pass_token": "p", "region": "cn", "cameras": []})
+    entry.add_to_hass(hass)
+    with patch("custom_components.xiaomi_hlc7.async_setup_entry", return_value=True):
+        r = await hass.config_entries.options.async_init(entry.entry_id)
+        r = await hass.config_entries.options.async_configure(r["flow_id"], {"quality": "hd", "lan_rtsp": True, "lan_rtsp_port": 8556, "lan_rtsp_username": "frigate", "lan_rtsp_password": "123"})
+        assert r["errors"] == {"lan_rtsp_password": "weak_password"}
+        r = await hass.config_entries.options.async_configure(r["flow_id"], {"quality": "hd", "lan_rtsp": True, "lan_rtsp_port": 8556, "lan_rtsp_username": "frigate", "lan_rtsp_password": "segredo123"})
+        assert r["type"] is FlowResultType.CREATE_ENTRY
+        assert entry.options["lan_rtsp_password"] == "segredo123"

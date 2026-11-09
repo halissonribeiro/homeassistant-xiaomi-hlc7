@@ -9,8 +9,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
+from homeassistant.components.network import async_get_source_ip
+from homeassistant.util import slugify
+
 from .const import (
     CONF_CAMERAS,
+    CONF_LAN_PASSWORD,
+    CONF_LAN_PORT,
+    CONF_LAN_RTSP,
+    CONF_LAN_USER,
+    DEFAULT_LAN_PORT,
+    DEFAULT_LAN_USER,
     CONF_PASS_TOKEN,
     CONF_QUALITY,
     CONF_REGION,
@@ -20,6 +29,7 @@ from .const import (
     QUALITY_OPTIONS,
 )
 from .coordinator import CameraInfo, Hlc7Coordinator, Hlc7Data
+from .rtsp import RtspServer
 from .xiaomi_cloud import XiaomiCloud, XiaomiCloudError
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,10 +89,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: Hlc7ConfigEntry) -> bool
     if not data.cameras:
         raise ConfigEntryNotReady("none of the selected cameras is available")
 
+    if entry.options.get(CONF_LAN_RTSP):
+        await _start_lan_rtsp(hass, entry, data)
+
     entry.runtime_data = data
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
     return True
+
+
+async def _start_lan_rtsp(hass: HomeAssistant, entry: Hlc7ConfigEntry, data: Hlc7Data) -> None:
+    """Expose every camera on rtsp://<HA IP>:<port>/<camera_name> for NVRs."""
+    port = int(entry.options.get(CONF_LAN_PORT, DEFAULT_LAN_PORT))
+    user = entry.options.get(CONF_LAN_USER, DEFAULT_LAN_USER)
+    routes = {}
+    for coordinator in data.cameras.values():
+        path = "/" + (slugify(coordinator.info.name) or coordinator.info.did)
+        routes[path] = coordinator.streamer
+    server = RtspServer(
+        routes=routes,
+        host="0.0.0.0",  # noqa: S104 - opt-in, password protected
+        port=port,
+        username=user,
+        password=entry.options.get(CONF_LAN_PASSWORD) or None,
+    )
+    try:
+        await server.start()
+    except OSError as err:
+        _LOGGER.error("Cannot open LAN RTSP port %s: %s", port, err)
+        return
+    data.lan_rtsp = server
+    try:
+        data.lan_host = await async_get_source_ip(hass)
+    except Exception:  # noqa: BLE001
+        data.lan_host = "<IP do HA>"
+    for coordinator in data.cameras.values():
+        for path, streamer in routes.items():
+            if streamer is coordinator.streamer:
+                coordinator.lan_url = f"rtsp://{data.lan_host}:{port}{path}"
 
 
 async def _reload_on_options(hass: HomeAssistant, entry: Hlc7ConfigEntry) -> None:
@@ -92,6 +136,8 @@ async def _reload_on_options(hass: HomeAssistant, entry: Hlc7ConfigEntry) -> Non
 async def async_unload_entry(hass: HomeAssistant, entry: Hlc7ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
+        if entry.runtime_data.lan_rtsp:
+            await entry.runtime_data.lan_rtsp.stop()
         for coordinator in entry.runtime_data.cameras.values():
             await coordinator.async_stop()
     return ok

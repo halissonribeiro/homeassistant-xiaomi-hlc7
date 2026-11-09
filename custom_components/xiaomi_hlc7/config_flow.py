@@ -26,6 +26,12 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_CAMERAS,
+    CONF_LAN_PASSWORD,
+    CONF_LAN_PORT,
+    CONF_LAN_RTSP,
+    CONF_LAN_USER,
+    DEFAULT_LAN_PORT,
+    DEFAULT_LAN_USER,
     CONF_PASS_TOKEN,
     CONF_QUALITY,
     CONF_REGION,
@@ -201,20 +207,37 @@ class Hlc7OptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        current = self.config_entry.options.get(CONF_QUALITY, DEFAULT_QUALITY)
+            if user_input.get(CONF_LAN_RTSP) and len(user_input.get(CONF_LAN_PASSWORD, "")) < 8:
+                errors[CONF_LAN_PASSWORD] = "weak_password"
+            else:
+                return self.async_create_entry(data=user_input)
+        opts = {**self.config_entry.options, **(user_input or {})}
         return self.async_show_form(
             step_id="init",
+            errors=errors,
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_QUALITY, default=current): SelectSelector(
+                    vol.Required(
+                        CONF_QUALITY, default=opts.get(CONF_QUALITY, DEFAULT_QUALITY)
+                    ): SelectSelector(
                         SelectSelectorConfig(
                             options=list(QUALITY_OPTIONS),
                             mode=SelectSelectorMode.LIST,
                             translation_key="quality",
                         )
-                    )
+                    ),
+                    vol.Required(CONF_LAN_RTSP, default=opts.get(CONF_LAN_RTSP, False)): bool,
+                    vol.Required(
+                        CONF_LAN_PORT, default=opts.get(CONF_LAN_PORT, DEFAULT_LAN_PORT)
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1024, max=65535)),
+                    vol.Required(
+                        CONF_LAN_USER, default=opts.get(CONF_LAN_USER, DEFAULT_LAN_USER)
+                    ): str,
+                    vol.Optional(
+                        CONF_LAN_PASSWORD, default=opts.get(CONF_LAN_PASSWORD, "")
+                    ): str,
                 }
             ),
         )

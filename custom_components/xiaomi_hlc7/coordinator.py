@@ -60,6 +60,7 @@ class Hlc7Coordinator(DataUpdateCoordinator[Props]):
         self.client = MiioClient(info.host, info.token)
         self.streamer = CameraStreamer(cloud, cloud_lock, region, info.did, info.host, quality)
         self.rtsp = RtspServer(self.streamer)
+        self.lan_url: str | None = None  # set when the LAN RTSP option is on
 
     async def async_start(self) -> None:
         await self.rtsp.start()
@@ -94,3 +95,5 @@ class Hlc7Coordinator(DataUpdateCoordinator[Props]):
 class Hlc7Data:
     cloud: XiaomiCloud
     cameras: dict[str, Hlc7Coordinator] = field(default_factory=dict)
+    lan_rtsp: RtspServer | None = None
+    lan_host: str | None = None
