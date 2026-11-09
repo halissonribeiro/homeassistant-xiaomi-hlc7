@@ -11,11 +11,16 @@ DOMAIN = "xiaomi_hlc7"
 MANUFACTURER = "Xiaomi"
 MODEL = "isa.camera.hlc7"
 
-CONF_TOKEN = "token"
-CONF_GO2RTC_URL = "go2rtc_url"
-CONF_STREAM = "stream"
+CONF_USER_ID = "user_id"
+CONF_PASS_TOKEN = "pass_token"
+CONF_REGION = "region"
+CONF_CAMERAS = "cameras"
+CONF_QUALITY = "quality"
 
-DEFAULT_GO2RTC_URL = "http://127.0.0.1:1984"
+REGIONS = ["cn", "de", "i2", "ru", "sg", "us"]
+DEFAULT_REGION = "cn"
+QUALITY_OPTIONS = {"hd": 2, "sd": 1, "auto": 0}
+DEFAULT_QUALITY = "hd"
 DEFAULT_SCAN_INTERVAL_S = 30
 
 PLATFORMS = [

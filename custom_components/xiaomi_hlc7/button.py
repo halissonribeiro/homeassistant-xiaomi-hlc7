@@ -8,13 +8,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import A_RESTART
-from .entity import Hlc7Entity
+from .entity import Hlc7Entity, cameras
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    async_add_entities([Hlc7Restart(entry.runtime_data)])
+    async_add_entities(Hlc7Restart(c) for c in cameras(entry))
 
 
 class Hlc7Restart(Hlc7Entity, ButtonEntity):

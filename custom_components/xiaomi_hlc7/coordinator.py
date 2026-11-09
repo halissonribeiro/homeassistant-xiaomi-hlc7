@@ -1,55 +1,72 @@
-"""Polls the camera's MIoT properties over local miIO."""
+"""Per-camera runtime: miIO property polling + P2P streamer + RTSP server."""
 
 from __future__ import annotations
 
 import logging
+import threading
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
-from urllib.parse import quote
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import (
-    CONF_GO2RTC_URL,
-    CONF_STREAM,
-    CONF_TOKEN,
-    DEFAULT_SCAN_INTERVAL_S,
-    DOMAIN,
-    POLLED_PROPERTIES,
-)
+from .const import DEFAULT_SCAN_INTERVAL_S, DOMAIN, POLLED_PROPERTIES
 from .miio import MiioClient, MiioError
+from .rtsp import RtspServer
+from .streamer import CameraStreamer
+from .xiaomi_cloud import XiaomiCloud
 
 _LOGGER = logging.getLogger(__name__)
 
 Props = dict[tuple[int, int], Any]
 
 
+@dataclass
+class CameraInfo:
+    did: str
+    name: str
+    model: str
+    host: str
+    token: str
+    mac: str | None = None
+
+
 class Hlc7Coordinator(DataUpdateCoordinator[Props]):
-    """Holds the miIO client, the go2rtc location and the latest property values."""
+    """One camera: controls over local miIO, media over local P2P."""
 
     config_entry: ConfigEntry
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        info: CameraInfo,
+        cloud: XiaomiCloud,
+        cloud_lock: threading.Lock,
+        region: str,
+        quality: int,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
-            name=DOMAIN,
+            name=f"{DOMAIN}_{info.did}",
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL_S),
         )
-        self.client = MiioClient(entry.data[CONF_HOST], entry.data[CONF_TOKEN])
-        self.go2rtc_url: str = entry.data[CONF_GO2RTC_URL].rstrip("/")
-        self.stream: str = entry.data[CONF_STREAM]
+        self.info = info
+        self.client = MiioClient(info.host, info.token)
+        self.streamer = CameraStreamer(cloud, cloud_lock, region, info.did, info.host, quality)
+        self.rtsp = RtspServer(self.streamer)
 
-    @property
-    def rtsp_url(self) -> str:
-        host = self.go2rtc_url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
-        return f"rtsp://{host}:8554/{quote(self.stream, safe='')}"
+    async def async_start(self) -> None:
+        await self.rtsp.start()
+
+    async def async_stop(self) -> None:
+        await self.rtsp.stop()
+        await self.hass.async_add_executor_job(self.streamer.shutdown)
 
     async def _async_update_data(self) -> Props:
         try:
@@ -72,14 +89,8 @@ class Hlc7Coordinator(DataUpdateCoordinator[Props]):
         except MiioError as err:
             raise HomeAssistantError(f"Ação falhou: {err}") from err
 
-    async def async_go2rtc(self, method: str, path: str, **params: str) -> bytes:
-        """Call the go2rtc HTTP API."""
-        session = async_get_clientsession(self.hass)
-        try:
-            async with session.request(
-                method, f"{self.go2rtc_url}{path}", params=params, timeout=15
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.read()
-        except Exception as err:  # noqa: BLE001
-            raise HomeAssistantError(f"go2rtc: {err}") from err
+
+@dataclass
+class Hlc7Data:
+    cloud: XiaomiCloud
+    cameras: dict[str, Hlc7Coordinator] = field(default_factory=dict)

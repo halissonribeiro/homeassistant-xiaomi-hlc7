@@ -2,25 +2,45 @@
   "config": {
     "step": {
       "user": {
-        "title": "Câmera Xiaomi 2K (local)",
-        "description": "Controle local da Xiaomi Mi Camera 2K Magnetic Mount (isa.camera.hlc7).\n\nPré-requisitos:\n- O token miIO da câmera (32 caracteres, obtido com o Xiaomi Cloud Tokens Extractor, servidor `cn`)\n- O add-on go2rtc com a câmera já adicionada pela fonte Xiaomi",
+        "title": "Conta Xiaomi (Mi Home)",
+        "description": "Entre com a mesma conta do app Mi Home. A senha não é guardada: o Home Assistant guarda só um token de sessão. Vídeo e controles depois trafegam pela rede local; a nuvem é usada só para autorizar cada conexão de vídeo.\n\nVersão chinesa da câmera: região `cn`.",
         "data": {
-          "name": "Nome",
-          "host": "IP da câmera",
-          "token": "Token miIO",
-          "go2rtc_url": "URL da API do go2rtc",
-          "stream": "Nome do stream no go2rtc"
+          "username": "E-mail, telefone ou ID Xiaomi",
+          "password": "Senha",
+          "region": "Região do servidor"
+        }
+      },
+      "captcha": {
+        "title": "Captcha",
+        "description": "A Xiaomi pediu um captcha. Abra [a imagem]({url}) e digite o texto.",
+        "data": {
+          "code": "Texto do captcha"
+        }
+      },
+      "verify": {
+        "title": "Verificação em duas etapas",
+        "description": "A Xiaomi enviou um código para {target}.",
+        "data": {
+          "code": "Código"
+        }
+      },
+      "cameras": {
+        "title": "Câmeras",
+        "description": "Escolha as câmeras para adicionar.",
+        "data": {
+          "cameras": "Câmeras"
         }
       }
     },
     "error": {
-      "invalid_token": "Token inválido (precisa ter 32 caracteres hexadecimais e ser o da câmera).",
-      "cannot_connect": "A câmera não respondeu na porta UDP 54321.",
-      "go2rtc_unreachable": "Não consegui acessar a API do go2rtc nessa URL.",
-      "stream_not_found": "Esse stream não existe no go2rtc (confira o nome exato)."
+      "invalid_auth": "Login recusado: {detail}"
     },
     "abort": {
-      "already_configured": "Esta câmera já está configurada."
+      "already_configured": "Esta conta já está configurada.",
+      "no_cameras": "Nenhuma câmera nessa conta/região.",
+      "cannot_connect": "Não consegui listar os dispositivos na nuvem Xiaomi.",
+      "wrong_account": "Entre com a mesma conta configurada antes.",
+      "reauth_successful": "Login renovado."
     }
   },
   "entity": {
@@ -106,6 +126,25 @@
     "media_player": {
       "speaker": {
         "name": "Alto-falante"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opções",
+        "data": {
+          "quality": "Qualidade do vídeo"
+        }
+      }
+    }
+  },
+  "selector": {
+    "quality": {
+      "options": {
+        "hd": "HD (2K)",
+        "sd": "SD",
+        "auto": "Automática"
       }
     }
   }

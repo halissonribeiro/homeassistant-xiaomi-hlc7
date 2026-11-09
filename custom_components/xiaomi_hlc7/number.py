@@ -8,13 +8,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import P_ALARM_INTERVAL
-from .entity import Hlc7Entity
+from .entity import Hlc7Entity, cameras
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    async_add_entities([Hlc7AlarmInterval(entry.runtime_data)])
+    async_add_entities(Hlc7AlarmInterval(c) for c in cameras(entry))
 
 
 class Hlc7AlarmInterval(Hlc7Entity, NumberEntity):

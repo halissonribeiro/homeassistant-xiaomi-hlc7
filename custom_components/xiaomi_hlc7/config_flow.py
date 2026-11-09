@@ -1,94 +1,220 @@
-"""Config flow: camera IP + miIO token + go2rtc stream name."""
+"""Config flow: Mi account login (captcha / e-mail or SMS code) + camera pick."""
 
 from __future__ import annotations
 
-import json
 import logging
-import re
+import os
+import time
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_NAME
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
-    CONF_GO2RTC_URL,
-    CONF_STREAM,
-    CONF_TOKEN,
-    DEFAULT_GO2RTC_URL,
+    CONF_CAMERAS,
+    CONF_PASS_TOKEN,
+    CONF_QUALITY,
+    CONF_REGION,
+    CONF_USER_ID,
+    DEFAULT_QUALITY,
+    DEFAULT_REGION,
     DOMAIN,
-    P_CAMERA_ON,
+    QUALITY_OPTIONS,
+    REGIONS,
 )
-from .miio import MiioClient, MiioError, MiioTimeout
+from .xiaomi_cloud import XiaomiCloud, XiaomiCloudError, XiaomiLoginStep
 
 _LOGGER = logging.getLogger(__name__)
 
-TOKEN_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+CAPTCHA_FILE = "www/xiaomi_hlc7_captcha.jpg"
 
 
-def _schema(defaults: dict[str, Any]) -> vol.Schema:
-    return vol.Schema(
-        {
-            vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "Câmera Xiaomi")): str,
-            vol.Required(CONF_HOST, default=defaults.get(CONF_HOST, "")): str,
-            vol.Required(CONF_TOKEN, default=defaults.get(CONF_TOKEN, "")): str,
-            vol.Required(
-                CONF_GO2RTC_URL, default=defaults.get(CONF_GO2RTC_URL, DEFAULT_GO2RTC_URL)
-            ): str,
-            vol.Required(CONF_STREAM, default=defaults.get(CONF_STREAM, "")): str,
-        }
-    )
+def _is_camera(dev: dict[str, Any]) -> bool:
+    return ".camera." in str(dev.get("model", ""))
 
 
 class Hlc7ConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    def __init__(self) -> None:
+        self._cloud: XiaomiCloud | None = None
+        self._region = DEFAULT_REGION
+        self._username = ""
+        self._verify_target = ""
+        self._devices: list[dict[str, Any]] = []
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(entry: ConfigEntry) -> OptionsFlow:
+        return Hlc7OptionsFlow()
+
+    # ------------------------------------------------------------ login
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
         if user_input is not None:
-            user_input[CONF_TOKEN] = user_input[CONF_TOKEN].strip().lower()
-            user_input[CONF_GO2RTC_URL] = user_input[CONF_GO2RTC_URL].strip().rstrip("/")
-            if not TOKEN_RE.match(user_input[CONF_TOKEN]):
-                errors[CONF_TOKEN] = "invalid_token"
-            else:
-                client = MiioClient(user_input[CONF_HOST].strip(), user_input[CONF_TOKEN])
-                try:
-                    await client.hello()
-                except MiioError:
-                    errors["base"] = "cannot_connect"
-                else:
-                    try:
-                        await client.get_properties([P_CAMERA_ON])
-                    except MiioTimeout:
-                        # Device answers hello but ignores packets signed
-                        # with a wrong token.
-                        errors[CONF_TOKEN] = "invalid_token"
-                    except MiioError:
-                        _LOGGER.exception("miIO check failed")
-                        errors[CONF_TOKEN] = "invalid_token"
-                if not errors:
-                    errors.update(await self._check_go2rtc(user_input))
-                if not errors:
-                    await self.async_set_unique_id(str(client.did))
-                    self._abort_if_unique_id_configured()
-                    name = user_input.pop(CONF_NAME)
-                    return self.async_create_entry(title=name, data=user_input)
+            self._cloud = XiaomiCloud()
+            self._region = user_input[CONF_REGION]
+            self._username = user_input[CONF_USERNAME]
+            return await self._run_login(
+                self._cloud.login, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+            )
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_USERNAME, default=self._username): str,
+                vol.Required(CONF_PASSWORD): str,
+                vol.Required(CONF_REGION, default=self._region): vol.In(REGIONS),
+            }
+        )
+        return self.async_show_form(step_id="user", data_schema=schema)
 
+    async def _run_login(self, func, *args) -> ConfigFlowResult:
+        assert self._cloud is not None
+        try:
+            await self.hass.async_add_executor_job(func, *args)
+        except XiaomiLoginStep as step:
+            if step.captcha:
+                await self.hass.async_add_executor_job(self._save_captcha, step.captcha)
+                return await self.async_step_captcha()
+            self._verify_target = step.verify_email or step.verify_phone or ""
+            return await self.async_step_verify()
+        except XiaomiCloudError as err:
+            _LOGGER.warning("Xiaomi login failed: %s", err)
+            return self.async_show_form(
+                step_id="user",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_USERNAME, default=self._username): str,
+                        vol.Required(CONF_PASSWORD): str,
+                        vol.Required(CONF_REGION, default=self._region): vol.In(REGIONS),
+                    }
+                ),
+                errors={"base": "invalid_auth"},
+                description_placeholders={"detail": str(err)[:200]},
+            )
+        return await self._after_login()
+
+    def _save_captcha(self, image: bytes) -> None:
+        path = self.hass.config.path(CAPTCHA_FILE)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(image)
+
+    async def async_step_captcha(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            assert self._cloud is not None
+            return await self._run_login(self._cloud.login_captcha, user_input["code"])
         return self.async_show_form(
-            step_id="user", data_schema=_schema(user_input or {}), errors=errors
+            step_id="captcha",
+            data_schema=vol.Schema({vol.Required("code"): str}),
+            description_placeholders={
+                "url": f"/local/xiaomi_hlc7_captcha.jpg?t={int(time.time())}"
+            },
         )
 
-    async def _check_go2rtc(self, data: dict[str, Any]) -> dict[str, str]:
-        session = async_get_clientsession(self.hass)
+    async def async_step_verify(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            assert self._cloud is not None
+            return await self._run_login(self._cloud.login_verify, user_input["code"].strip())
+        return self.async_show_form(
+            step_id="verify",
+            data_schema=vol.Schema({vol.Required("code"): str}),
+            description_placeholders={"target": self._verify_target or "?"},
+        )
+
+    # ---------------------------------------------------------- cameras
+    async def _after_login(self) -> ConfigFlowResult:
+        assert self._cloud is not None
+        if self.source == "reauth":
+            entry = self._get_reauth_entry()
+            if str(self._cloud.user_id) != str(entry.unique_id):
+                return self.async_abort(reason="wrong_account")
+            return self.async_update_reload_and_abort(
+                entry,
+                data={
+                    **entry.data,
+                    CONF_PASS_TOKEN: self._cloud.pass_token,
+                },
+            )
+        await self.async_set_unique_id(str(self._cloud.user_id))
+        self._abort_if_unique_id_configured()
         try:
-            async with session.get(f"{data[CONF_GO2RTC_URL]}/api/streams", timeout=10) as resp:
-                resp.raise_for_status()
-                streams = json.loads(await resp.text())
-        except Exception:  # noqa: BLE001
-            return {CONF_GO2RTC_URL: "go2rtc_unreachable"}
-        if data[CONF_STREAM] not in streams:
-            return {CONF_STREAM: "stream_not_found"}
-        return {}
+            devices = await self.hass.async_add_executor_job(self._cloud.devices, self._region)
+        except XiaomiCloudError as err:
+            _LOGGER.warning("Xiaomi device list failed: %s", err)
+            return self.async_abort(reason="cannot_connect")
+        self._devices = [d for d in devices if _is_camera(d)]
+        if not self._devices:
+            return self.async_abort(reason="no_cameras")
+        return await self.async_step_cameras()
+
+    async def async_step_cameras(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        assert self._cloud is not None
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"Xiaomi {self._username}",
+                data={
+                    CONF_USER_ID: str(self._cloud.user_id),
+                    CONF_PASS_TOKEN: self._cloud.pass_token,
+                    CONF_REGION: self._region,
+                    CONF_CAMERAS: user_input[CONF_CAMERAS],
+                },
+            )
+        options = {
+            str(d["did"]): f"{d.get('name')} ({d.get('model')}, {d.get('localip')})"
+            for d in self._devices
+        }
+        return self.async_show_form(
+            step_id="cameras",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_CAMERAS, default=list(options)): cv.multi_select(options)}
+            ),
+        )
+
+    # ------------------------------------------------------------ reauth
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        self._region = entry_data.get(CONF_REGION, DEFAULT_REGION)
+        return await self.async_step_user()
+
+
+class Hlc7OptionsFlow(OptionsFlow):
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+        current = self.config_entry.options.get(CONF_QUALITY, DEFAULT_QUALITY)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_QUALITY, default=current): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(QUALITY_OPTIONS),
+                            mode=SelectSelectorMode.LIST,
+                            translation_key="quality",
+                        )
+                    )
+                }
+            ),
+        )

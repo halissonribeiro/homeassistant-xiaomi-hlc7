@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from homeassistant.const import CONF_HOST
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .const import DOMAIN, MANUFACTURER
 from .coordinator import Hlc7Coordinator
 
 
@@ -15,20 +14,23 @@ class Hlc7Entity(CoordinatorEntity[Hlc7Coordinator]):
 
     def __init__(self, coordinator: Hlc7Coordinator, key: str) -> None:
         super().__init__(coordinator)
-        entry = coordinator.config_entry
-        self._device_key = entry.unique_id or entry.entry_id
-        self._attr_unique_id = f"{self._device_key}_{key}"
+        info = coordinator.info
+        self._attr_unique_id = f"{info.did}_{key}"
         self._attr_translation_key = key
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_key)},
+            identifiers={(DOMAIN, info.did)},
+            connections={(CONNECTION_NETWORK_MAC, info.mac.lower())} if info.mac else set(),
             manufacturer=MANUFACTURER,
-            model=MODEL,
-            model_id=MODEL,
-            name=entry.title,
-            configuration_url=coordinator.go2rtc_url,
+            model=info.model,
+            model_id=info.model,
+            name=info.name,
         )
-        self._host = entry.data[CONF_HOST]
 
     def _value(self, prop: tuple[int, int]):
         data = self.coordinator.data or {}
         return data.get(prop)
+
+
+def cameras(entry):
+    """All camera coordinators of a config entry."""
+    return entry.runtime_data.cameras.values()

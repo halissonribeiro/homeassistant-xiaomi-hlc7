@@ -17,7 +17,7 @@ from .const import (
     ROLLOVER_OPTIONS,
     SENSITIVITY_OPTIONS,
 )
-from .entity import Hlc7Entity
+from .entity import Hlc7Entity, cameras
 
 SELECTS = [
     ("night_vision", P_NIGHT_SHOT, NIGHT_SHOT_OPTIONS, "mdi:weather-night"),
@@ -30,9 +30,9 @@ SELECTS = [
 async def async_setup_entry(
     hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator = entry.runtime_data
     async_add_entities(
         Hlc7Select(coordinator, key, prop, mapping, icon)
+        for coordinator in cameras(entry)
         for key, prop, mapping, icon in SELECTS
     )
 
