@@ -140,7 +140,7 @@
           "lan_rtsp_username": "Usuário RTSP",
           "lan_rtsp_password": "Senha RTSP (mín. 8 caracteres)"
         },
-        "description": "Opcional: expõe as câmeras em RTSP na rede local para NVRs (Frigate, etc.), em `rtsp://usuário:senha@<IP do HA>:<porta>/<nome_da_câmera>`. O endereço exato aparece no atributo `rtsp_lan_url` da entidade câmera."
+        "description": "Opcional: expõe as câmeras em RTSP na rede local para NVRs (Frigate, etc.), em `rtsp://usuário:senha@IP_DO_HA:PORTA/NOME_DA_CAMERA`. O endereço exato aparece no atributo `rtsp_lan_url` da entidade câmera."
       }
     },
     "error": {
